@@ -27,6 +27,14 @@ export function createChatIndex(file) {
       current.lastModified = Date.now();
       save();
     },
+    recordEvent({ providerId, accountId = 'default', sessionId, type, busy }) {
+      if (!sessionId) return;
+      if (type === 'busy') return this.updateStatus({ providerId, accountId, sessionId, status: busy ? 'working' : 'completed' });
+      if (type === 'permission') return this.updateStatus({ providerId, accountId, sessionId, status: 'waiting' });
+      if (type === 'permission_resolved') return this.updateStatus({ providerId, accountId, sessionId, status: 'working' });
+      if (type === 'error') return this.updateStatus({ providerId, accountId, sessionId, status: 'error' });
+      if (type === 'closed') return this.updateStatus({ providerId, accountId, sessionId, status: 'completed' });
+    },
     list() { return chats.slice(); },
   };
 }

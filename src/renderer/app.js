@@ -62,6 +62,7 @@ const state = {
   account: null,
   providers: [],
   agentUsage: [],
+  managedChats: [],
   sidebarView: 'chats',
   settings: null,
   sessions: [],
@@ -534,7 +535,13 @@ function scheduleRefreshSessions(delay = 600) {
 
 async function refreshSessions() {
   try {
-    state.sessions = (await api.sessions.list()).sort((a, b) => b.lastModified - a.lastModified);
+    const [sessions, managedChats] = await Promise.all([api.sessions.list(), api.chats.list()]);
+    state.managedChats = managedChats;
+    const indexed = new Map(managedChats.map((chat) => [`${chat.providerId}:${chat.accountId}:${chat.sessionId}`, chat]));
+    state.sessions = sessions.map((session) => ({
+      ...session,
+      ...(indexed.get(`${session.providerId || 'claude'}:${session.accountId || 'default'}:${session.sessionId}`) || {}),
+    })).sort((a, b) => b.lastModified - a.lastModified);
   } catch (error) {
     console.error(error);
   }

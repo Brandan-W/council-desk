@@ -87,7 +87,7 @@ export class CopilotSessionManager {
     record.messages.push({ type: 'user', uuid: randomUUID(), message: { role: 'user', content: text } });
     this.persist();
     this.emit({ key, type: 'session', sessionId: id, cwd, model: model || 'auto', mode: 'default' });
-    this.emit({ key, type: 'busy', busy: true });
+    this.emit({ key, type: 'busy', sessionId: id, busy: true });
     const args = [
       '-C', cwd,
       '--prompt', text,
@@ -103,8 +103,8 @@ export class CopilotSessionManager {
     let buffer = '';
     const finish = (error = null) => {
       if (this.live.get(id) === child) this.live.delete(id);
-      this.emit({ key, type: 'busy', busy: false });
-      if (error) this.emit({ key, type: 'error', message: error.message || String(error) });
+      this.emit({ key, type: 'busy', sessionId: id, busy: false });
+      if (error) this.emit({ key, type: 'error', sessionId: id, message: error.message || String(error) });
       this.persist();
     };
     child.stdout.on('data', (chunk) => {

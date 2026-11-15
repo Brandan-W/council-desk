@@ -35,6 +35,12 @@ const chatIndex = createChatIndex(path.join(app.getPath('userData'), 'desk-chats
 let win = null;
 let quitting = false;
 
+function emitIndexed(providerId, accountId, event) {
+  if (event.type === 'session') chatIndex.register({ providerId, accountId, sessionId: event.sessionId, cwd: event.cwd });
+  else chatIndex.recordEvent({ providerId, accountId, sessionId: event.sessionId, type: event.type, busy: event.busy });
+  win?.webContents.send('session:event', event);
+}
+
 // Window color while the page loads, so a dark theme doesn't flash light.
 const THEME_BACKGROUNDS = {
   midnight: '#14161c',
@@ -170,10 +176,7 @@ const schedules = createSchedules({
 
 const manager = new SessionManager({
   env: () => apiKey.engineEnv(),
-  emit: (event) => {
-    if (event.type === 'session') chatIndex.register({ providerId: 'claude', sessionId: event.sessionId, cwd: event.cwd });
-    win?.webContents.send('session:event', event);
-  },
+  emit: (event) => emitIndexed('claude', manager.accountId, event),
   log,
   blockedConnectors: (cwd) => unapprovedProjectServers(cwd, CONFIG_DIR, connectorApprovals()),
   extraServers: () => (store.get().browserTools === false ? {} : { browser: browser.server() }),
@@ -181,10 +184,7 @@ const manager = new SessionManager({
   voice: () => voicePrompt(store.get()),
 });
 const copilot = new CopilotSessionManager({
-  emit: (event) => {
-    if (event.type === 'session') chatIndex.register({ providerId: 'copilot', accountId: copilot.accountId, sessionId: event.sessionId, cwd: event.cwd });
-    win?.webContents.send('session:event', event);
-  },
+  emit: (event) => emitIndexed('copilot', copilot.accountId, event),
   log,
   dir: app.getPath('userData'),
 });
@@ -401,6 +401,7 @@ const handlers = {
   'term:kill': (id) => terminals.kill(id),
 
   'providers:list': () => providers.list(),
+  'chats:list': () => chatIndex.list(),
   'sessions:list': async () => [...(await manager.list()), ...copilot.list()],
   'agents:usage': async () => {
     const sessions = [...(await manager.list()), ...copilot.list()];

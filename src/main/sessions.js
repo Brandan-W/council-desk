@@ -86,7 +86,7 @@ class LiveSession {
   }
 
   emit(event) {
-    this.manager.emit({ key: this.key, ...event });
+    this.manager.emit({ key: this.key, sessionId: this.sessionId, ...event });
   }
 
   setBusy(busy) {

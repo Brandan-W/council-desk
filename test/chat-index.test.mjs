@@ -10,6 +10,8 @@ test('Desk chat index registers provider sessions without merging opaque histori
   const index = createChatIndex(path.join(dir, 'desk-chats.json'));
   index.register({ providerId: 'copilot', accountId: 'local', sessionId: 's1', cwd: '/tmp/project', status: 'active' });
   index.register({ providerId: 'codex', accountId: 'school', sessionId: 's2', cwd: '/tmp/project', status: 'active' });
+  index.recordEvent({ providerId: 'copilot', accountId: 'local', sessionId: 's1', type: 'busy', busy: true });
+  assert.equal(index.list().find((chat) => chat.sessionId === 's1').status, 'working');
   assert.deepEqual(index.list().map(({ providerId, sessionId, cwd }) => ({ providerId, sessionId, cwd })), [
     { providerId: 'codex', sessionId: 's2', cwd: '/tmp/project' },
     { providerId: 'copilot', sessionId: 's1', cwd: '/tmp/project' },
