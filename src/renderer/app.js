@@ -435,7 +435,17 @@ const agentNames = { claude: 'Claude Code', copilot: 'Copilot', codex: 'Codex' }
 const metric = (value) => value == null ? 'Not available' : String(value);
 
 function renderAgentAccounts() {
-  el.account.replaceChildren(...(state.agentUsage || []).map((agent) => {
+  el.account.replaceChildren(
+    h('button', { class: 'sidebar-control popover-trigger', onclick: () => togglePopover('agents', openAgentPanel) }, svg(ICONS.mark), 'Connect/manage agents'),
+    h('button', { class: 'sidebar-control', onclick: toggleSettings }, svg(ICONS.settings), 'Settings'),
+  );
+}
+
+function openAgentPanel() {
+  const panel = h('div', { class: 'agent-panel' },
+    h('div', { class: 'usage-head' }, h('span', {}, 'Agents'), h('button', { class: 'btn link', onclick: closePopover }, 'Close')),
+    h('p', { class: 'settings-hint' }, 'Connect providers and review usage reported by each runtime.'),
+    ...(state.agentUsage || []).map((agent) => {
     const usage = agent.usage;
     const identity = agent.providerId === 'claude' ? authLabel(state.account || {}) : agent.accountId || 'Not configured';
     const details = h('div', { class: 'agent-usage-details', hidden: true },
@@ -455,17 +465,8 @@ function renderAgentAccounts() {
       h('span', { class: 'agent-chevron' }, '›'),
     );
     return h('div', { class: 'agent-account-row' }, toggle, details);
-  }), state.account?.loggedIn ? h('button', {
-    class: 'icon-btn agent-settings popover-trigger',
-    title: 'Settings and appearance',
-    onclick: (e) => openMenu(e.clientX, e.clientY - 150, [
-      { label: 'Settings…', run: toggleSettings },
-      { label: 'Theme…', run: toggleThemes },
-      { label: 'Saved prompts…', run: () => showPrompts() },
-      { label: 'Scheduled tasks…', run: () => showSchedules() },
-      { label: 'Show Claude Code config folder', run: () => api.app.reveal(state.info.configDir) },
-    ]),
-  }, svg(ICONS.more)) : null);
+  }));
+  openPopover('agents', panel);
 }
 
 async function refreshAgentUsage() {
