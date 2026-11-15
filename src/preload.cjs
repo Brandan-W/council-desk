@@ -26,6 +26,9 @@ contextBridge.exposeInMainWorld('api', {
   providers: {
     list: invoke('providers:list'),
   },
+  agents: {
+    usage: invoke('agents:usage'),
+  },
   settings: {
     get: invoke('settings:get'),
     set: invoke('settings:set'),

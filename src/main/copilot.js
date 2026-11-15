@@ -77,10 +77,13 @@ export class CopilotSessionManager {
       firstPrompt: text,
       summary: text,
       messages: [],
+      usage: { requests: 0, inputTokens: 0, outputTokens: 0, costUsd: null },
     };
     if (!existing) this.sessions.unshift(record);
     record.cwd = cwd;
     record.lastModified = Date.now();
+    record.usage = record.usage || { requests: 0, inputTokens: 0, outputTokens: 0, costUsd: null };
+    record.usage.requests += 1;
     record.messages.push({ type: 'user', uuid: randomUUID(), message: { role: 'user', content: text } });
     this.persist();
     this.emit({ key, type: 'session', sessionId: id, cwd, model: model || 'auto', mode: 'default' });
@@ -132,8 +135,25 @@ export class CopilotSessionManager {
       record.lastModified = Date.now();
       this.emit({ key, type: 'sdk', msg: message });
     } else if (event.type === 'result') {
+      const usage = data.usage || event.usage || {};
+      record.usage = record.usage || { requests: 0, inputTokens: 0, outputTokens: 0, costUsd: null };
+      record.usage.inputTokens += Number(usage.input_tokens || usage.inputTokens || 0);
+      record.usage.outputTokens += Number(usage.output_tokens || usage.outputTokens || 0);
+      if (data.cost_usd != null || event.cost_usd != null) record.usage.costUsd = Number(data.cost_usd ?? event.cost_usd);
       this.emit({ key, type: 'sdk', msg: { type: 'result', subtype: event.exitCode === 0 ? 'success' : 'error', result: data.result || '' } });
     }
+  }
+
+  usage() {
+    return this.sessions.reduce((total, session) => {
+      const usage = session.usage || {};
+      return {
+        requests: total.requests + Number(usage.requests || 0),
+        inputTokens: total.inputTokens + Number(usage.inputTokens || 0),
+        outputTokens: total.outputTokens + Number(usage.outputTokens || 0),
+        costUsd: total.costUsd == null || usage.costUsd == null ? null : total.costUsd + usage.costUsd,
+      };
+    }, { requests: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 });
   }
 
   interrupt(sessionId) {

@@ -103,6 +103,7 @@ class LiveSession {
           this.emit({ type: 'session', sessionId: msg.session_id, cwd: msg.cwd, model: msg.model, mode: msg.permissionMode });
         }
         if (msg.type === 'result') {
+          this.manager.recordUsage(this.key, msg);
           this.setBusy(false);
           if (msg.fast_mode_state) this.emit({ type: 'fast', state: msg.fast_mode_state, reason: msg.fast_mode_disabled_reason || null });
         }
@@ -201,10 +202,30 @@ export class SessionManager {
     this.voice = voice;
     this.live = new Map();
     this.resumeAt = new Map(); // key -> message id to continue from after a rewind
+    this.usageBySession = new Map();
   }
 
   list() {
     return Promise.resolve(listSessions({ limit: 300 })).then((sessions) => sessions.map((session) => withProvider(session, this)));
+  }
+
+  recordUsage(key, msg) {
+    const current = this.usageBySession.get(key) || { requests: 0, inputTokens: 0, outputTokens: 0, costUsd: null };
+    current.requests += 1;
+    const usage = msg.usage || {};
+    current.inputTokens += Number(usage.input_tokens || usage.inputTokens || 0);
+    current.outputTokens += Number(usage.output_tokens || usage.outputTokens || 0);
+    if (msg.total_cost_usd != null) current.costUsd = Number(msg.total_cost_usd);
+    this.usageBySession.set(key, current);
+  }
+
+  usage() {
+    return [...this.usageBySession.values()].reduce((total, item) => ({
+      requests: total.requests + item.requests,
+      inputTokens: total.inputTokens + item.inputTokens,
+      outputTokens: total.outputTokens + item.outputTokens,
+      costUsd: total.costUsd == null || item.costUsd == null ? null : total.costUsd + item.costUsd,
+    }), { requests: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 });
   }
 
   history(sessionId, cwd) {

@@ -61,6 +61,7 @@ const state = {
   info: null,
   account: null,
   providers: [],
+  agentUsage: [],
   settings: null,
   sessions: [],
   convs: new Map(),
@@ -427,27 +428,49 @@ async function refreshAccount() {
   const account = await api.account.status();
   state.account = account;
   el.welcome.hidden = Boolean(account.loggedIn);
-  if (!account.loggedIn) return el.account.replaceChildren();
-  el.account.replaceChildren(
-    h('div', { class: 'avatar' }, svg(ICONS.key)),
-    h('div', { class: 'who' }, h('div', { class: 'email' }, 'Claude Code'), h('div', { class: 'org' }, h('span', { class: 'org-name', title: authLabel(account) }, authLabel(account)))),
-    h(
-      'button',
-      {
-        class: 'icon-btn popover-trigger',
-        title: 'Settings and appearance',
-        onclick: (e) =>
-          openMenu(e.clientX, e.clientY - 150, [
-            { label: 'Settings…', run: toggleSettings },
-            { label: 'Theme…', run: toggleThemes },
-            { label: 'Saved prompts…', run: () => showPrompts() },
-            { label: 'Scheduled tasks…', run: () => showSchedules() },
-            { label: 'Show Claude Code config folder', run: () => api.app.reveal(state.info.configDir) },
-          ]),
-      },
-      svg(ICONS.more),
-    ),
-  );
+  renderAgentAccounts();
+}
+
+const agentNames = { claude: 'Claude Code', copilot: 'Copilot', codex: 'Codex' };
+const metric = (value) => value == null ? 'Not available' : String(value);
+
+function renderAgentAccounts() {
+  el.account.replaceChildren(...(state.agentUsage || []).map((agent) => {
+    const usage = agent.usage;
+    const identity = agent.providerId === 'claude' ? authLabel(state.account || {}) : agent.accountId || 'Not configured';
+    const details = h('div', { class: 'agent-usage-details', hidden: true },
+      h('div', {}, `Sessions: ${metric(agent.sessionCount)}`),
+      h('div', {}, `Requests: ${metric(usage?.requests)}`),
+      h('div', {}, `Input tokens: ${metric(usage?.inputTokens)}`),
+      h('div', {}, `Output tokens: ${metric(usage?.outputTokens)}`),
+      h('div', {}, `Cost: ${usage?.costUsd == null ? 'Not available' : `$${Number(usage.costUsd).toFixed(4)}`}`),
+      !agent.available ? h('div', { class: 'agent-unavailable' }, agent.unavailableReason || 'Not available') : null,
+    );
+    const toggle = h('button', { class: 'agent-account', 'aria-expanded': 'false', onclick: () => {
+      details.hidden = !details.hidden;
+      toggle.setAttribute('aria-expanded', String(!details.hidden));
+    } },
+      h('div', { class: 'avatar' }, (agentNames[agent.providerId] || agent.providerId).slice(0, 1)),
+      h('div', { class: 'who' }, h('div', { class: 'email' }, agentNames[agent.providerId] || agent.providerId), h('div', { class: 'org' }, h('span', { class: 'org-name', title: identity }, identity))),
+      h('span', { class: 'agent-chevron' }, '›'),
+    );
+    return h('div', { class: 'agent-account-row' }, toggle, details);
+  }), state.account?.loggedIn ? h('button', {
+    class: 'icon-btn agent-settings popover-trigger',
+    title: 'Settings and appearance',
+    onclick: (e) => openMenu(e.clientX, e.clientY - 150, [
+      { label: 'Settings…', run: toggleSettings },
+      { label: 'Theme…', run: toggleThemes },
+      { label: 'Saved prompts…', run: () => showPrompts() },
+      { label: 'Scheduled tasks…', run: () => showSchedules() },
+      { label: 'Show Claude Code config folder', run: () => api.app.reveal(state.info.configDir) },
+    ]),
+  }, svg(ICONS.more)) : null);
+}
+
+async function refreshAgentUsage() {
+  state.agentUsage = await api.agents.usage().catch(() => []);
+  renderAgentAccounts();
 }
 
 // After a key is saved or removed (here or in Settings): recheck, and load what needs a
@@ -501,6 +524,7 @@ async function refreshSessions() {
     console.error(error);
   }
   renderSidebar();
+  refreshAgentUsage();
 }
 
 const PIN_ICON = '<svg class="pin" viewBox="0 0 20 20"><path d="M12.5 3.5l4 4-3 1.5-2.5 2.5.5 3.5-1.5 1.5-3-3-3.5 3.5M7 10l3 3" /></svg>';

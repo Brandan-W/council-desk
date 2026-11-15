@@ -394,6 +394,15 @@ const handlers = {
 
   'providers:list': () => providers.list(),
   'sessions:list': async () => [...(await manager.list()), ...copilot.list()],
+  'agents:usage': async () => {
+    const sessions = [...(await manager.list()), ...copilot.list()];
+    const count = (providerId) => sessions.filter((session) => session.providerId === providerId).length;
+    return [
+      { providerId: 'claude', accountId: manager.accountId, sessionCount: count('claude'), usage: manager.usage(), available: true },
+      { providerId: 'copilot', accountId: copilot.accountId, sessionCount: count('copilot'), usage: copilot.usage(), available: true },
+      { providerId: 'codex', accountId: null, sessionCount: count('codex'), usage: null, available: false, unavailableReason: 'Codex is not configured in Council Desk.' },
+    ];
+  },
   'sessions:search': (query) => searchSessions(query),
   'sessions:history': (sessionId, cwd, providerId = 'claude') => providerId === 'copilot' ? copilot.history(sessionId, cwd) : manager.history(sessionId, cwd),
   'sessions:rename': (sessionId, title, cwd, providerId = 'claude') => providerId === 'copilot' ? copilot.rename(sessionId, title) : manager.rename(sessionId, title, cwd),

@@ -135,7 +135,17 @@ body.sidebar-hidden #sidebar { margin-left: -272px; }
 .menu button:hover { background: var(--raised); }
 .menu button.danger { color: var(--danger); }
 
-.account { border-top: 1px solid var(--border); padding: 10px 12px; display: flex; align-items: center; gap: 10px; }
+.account { border-top: 1px solid var(--border); padding: 6px 8px 8px; display: flex; flex-direction: column; gap: 2px; }
+.agent-account-row { width: 100%; }
+.agent-account { width: 100%; display: flex; align-items: center; gap: 10px; padding: 6px 4px; border: 0; border-radius: 8px; background: transparent; color: inherit; text-align: left; cursor: pointer; }
+.agent-account:hover { background: var(--raised); }
+.agent-account .avatar { width: 28px; height: 28px; }
+.agent-account .who { flex: 1; min-width: 0; }
+.agent-chevron { color: var(--faint); font-size: 18px; line-height: 1; transform: rotate(0deg); }
+.agent-account[aria-expanded='true'] .agent-chevron { transform: rotate(90deg); }
+.agent-usage-details { margin: 0 8px 5px 42px; padding: 5px 7px; border-left: 1px solid var(--border); color: var(--muted); font-size: 11px; line-height: 1.55; }
+.agent-unavailable { color: var(--faint); margin-top: 3px; }
+.agent-settings { align-self: flex-end; margin-top: 1px; }
 .avatar {
   width: 30px; height: 30px; border-radius: 50%; background: var(--accent); color: var(--on-accent); display: grid; place-items: center;
   font-weight: 600; font-size: 13px; flex-shrink: 0;
