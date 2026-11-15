@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createProviderRegistry } from '../src/main/providers.js';
-import { providerList, sessionKey, withProvider } from '../src/shared/providers.js';
+import { providerAvailable, providerList, sessionKey, withProvider } from '../src/shared/providers.js';
 
 test('provider metadata exposes Claude, Codex, and the local Copilot adapter', () => {
   assert.deepEqual(providerList().map(({ id, status }) => ({ id, status })), [
@@ -17,6 +17,13 @@ test('session identity includes provider and account without changing the opaque
   assert.equal(record.providerId, 'copilot');
   assert.equal(record.accountId, 'local');
   assert.equal(sessionKey(record), 'copilot:local:same-id');
+});
+
+test('agent selection accepts configured providers and rejects external placeholders', () => {
+  const providers = providerList();
+  assert.equal(providerAvailable(providers, 'claude'), true);
+  assert.equal(providerAvailable(providers, 'copilot'), true);
+  assert.equal(providerAvailable(providers, 'codex'), false);
 });
 
 test('Copilot registry returns the configured runtime adapter', () => {

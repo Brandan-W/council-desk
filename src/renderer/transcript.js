@@ -7,6 +7,7 @@ const HIDDEN_USER_TEXT = /^\s*<(command-|local-command|system-reminder|bash-|use
 export class Conversation {
   constructor({ key, sessionId = null, cwd = null, title = '', mode = 'default', model = '', providerId = 'claude', accountId = 'default', api, onRespond }) {
     Object.assign(this, { key, sessionId, cwd, title, mode, model, providerId, accountId, api, onRespond });
+    this.providerSessions = sessionId ? { [providerId]: sessionId } : {};
     this.el = h('div', { class: 'transcript' });
     this.tools = new Map();
     this.cards = new Map();

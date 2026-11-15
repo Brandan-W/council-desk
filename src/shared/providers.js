@@ -26,6 +26,9 @@ export const providerList = () => Object.values(PROVIDERS).map((provider) => ({
   capabilities: [...provider.capabilities],
 }));
 
+export const providerAvailable = (providers, id) =>
+  providers.some((provider) => provider.id === id && provider.status === 'available');
+
 export const sessionKey = ({ providerId = 'claude', accountId = 'default', sessionId }) =>
   `${providerId}:${accountId}:${sessionId || 'new'}`;
 

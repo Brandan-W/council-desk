@@ -31,7 +31,7 @@ import {
   sortSessions,
 } from '../shared/session-list.js';
 import { ensureTrusted } from './trust-dialog.js';
-import { sessionKey } from '../shared/providers.js';
+import { providerAvailable, sessionKey } from '../shared/providers.js';
 
 const api = window.api;
 const $ = (id) => document.getElementById(id);
@@ -336,6 +336,19 @@ function renderModelOptions(models) {
       .map((m) => h('option', { value: m.value, title: m.description || '' }, modelLabel(m))),
   );
   setSelect(el.model, state.active?.model ?? '');
+}
+
+function renderProviderOptions() {
+  const providers = state.providers.length ? state.providers : [
+    { id: 'claude', name: 'Claude', status: 'available' },
+    { id: 'copilot', name: 'Copilot', status: 'available' },
+    { id: 'codex', name: 'Codex', status: 'external' },
+  ];
+  el.provider.replaceChildren(...providers.map((provider) => h('option', {
+    value: provider.id,
+    disabled: provider.status !== 'available',
+  }, provider.status === 'available' ? provider.name : `${provider.name} (not configured)`)));
+  setSelect(el.provider, state.active?.providerId || 'claude');
 }
 
 async function loadModels() {
@@ -1257,6 +1270,11 @@ async function openSession(s) {
     conv.loading = false;
     // You may have opened another session meanwhile; don't jump back to this one.
     if (state.active !== conv) return;
+    const selected = state.settings.agentSelections?.[conv.key];
+    if (selected && selected !== conv.providerId && providerAvailable(state.providers, selected)) {
+      conv.providerId = selected;
+      conv.sessionId = conv.providerSessions[selected] || null;
+    }
   }
   show(conv);
   scrollToBottom();
@@ -1310,7 +1328,7 @@ function show(conv) {
   el.folderChip.disabled = conv.hasMessages;
   el.folderChip.title = conv.hasMessages ? tilde(conv.cwd) : 'Choose the project folder';
   setSelect(el.provider, conv.providerId || 'claude');
-  el.provider.disabled = conv.hasMessages;
+  el.provider.disabled = false;
   const copilot = conv.providerId === 'copilot';
   el.mode.disabled = copilot;
   el.effort.disabled = copilot;
@@ -1520,11 +1538,12 @@ async function removeWorktree(s) {
 // Sends one message to a conversation's Claude process (starting it if needed).
 async function startTurn(conv, text, files = [], uuid = crypto.randomUUID()) {
   try {
+    const providerId = conv.providerId || 'claude';
     await api.chat.send({
       key: conv.key,
       cwd: conv.cwd,
-      resume: conv.sessionId || undefined,
-      providerId: conv.providerId || 'claude',
+      resume: conv.providerSessions[providerId] || undefined,
+      providerId,
       mode: conv.mode,
       model: conv.model,
       effort: conv.effort,
@@ -1564,6 +1583,7 @@ api.onEvent((ev) => {
   switch (ev.type) {
     case 'session':
       conv.sessionId = ev.sessionId;
+      conv.providerSessions[conv.providerId || 'claude'] = ev.sessionId;
       conv.cwd = ev.cwd || conv.cwd;
       labelHelper(conv);
       if (ev.mode && ev.mode !== conv.mode) conv.mode = ev.mode;
@@ -1950,8 +1970,25 @@ el.fast.addEventListener('click', () => {
 
 el.provider.addEventListener('change', () => {
   const conv = state.active;
-  if (!conv || conv.hasMessages) return;
-  conv.providerId = el.provider.value;
+  if (!conv) return;
+  const next = el.provider.value;
+  const available = state.providers.find((provider) => provider.id === next);
+  if (conv.busy) {
+    setSelect(el.provider, conv.providerId || 'claude');
+    conv.addNote('Finish or stop the current request before switching agents.', 'error');
+    return;
+  }
+  if (!available || !providerAvailable(state.providers, next)) {
+    setSelect(el.provider, conv.providerId || 'claude');
+    conv.addNote(`${available?.name || next} is not configured in Council Desk.`, 'error');
+    return;
+  }
+  conv.providerId = next;
+  conv.sessionId = conv.providerSessions[next] || null;
+  const selections = { ...(state.settings.agentSelections || {}), [conv.key]: next };
+  state.settings.agentSelections = selections;
+  api.settings.set({ agentSelections: selections });
+  if (conv.hasMessages) conv.addNote(`Future turns will use ${available.name}. Existing transcript history is preserved.`);
   if (conv.providerId === 'copilot') {
     el.mode.disabled = true;
     el.effort.disabled = true;
@@ -2017,6 +2054,7 @@ async function init() {
   state.info = await api.app.info();
   state.settings = await api.settings.get();
   state.providers = await api.providers.list().catch(() => []);
+  renderProviderOptions();
   installAllThemes();
   applyTheme(state.settings.theme);
   document.body.classList.toggle('sidebar-hidden', Boolean(state.settings.sidebarHidden));
