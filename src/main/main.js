@@ -25,11 +25,13 @@ import { voicePrompt } from '../shared/voices.js';
 import { createWorkspace } from './workspace.js';
 import { createProviderRegistry } from './providers.js';
 import { CopilotSessionManager } from './copilot.js';
+import { createChatIndex } from './chat-index.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const store = createStore(app.getPath('userData'));
 const apiKey = createApiKey({ dir: app.getPath('userData') });
 const logFile = path.join(app.getPath('logs'), 'claude.log');
+const chatIndex = createChatIndex(path.join(app.getPath('userData'), 'desk-chats.json'));
 let win = null;
 let quitting = false;
 
@@ -168,7 +170,10 @@ const schedules = createSchedules({
 
 const manager = new SessionManager({
   env: () => apiKey.engineEnv(),
-  emit: (event) => win?.webContents.send('session:event', event),
+  emit: (event) => {
+    if (event.type === 'session') chatIndex.register({ providerId: 'claude', sessionId: event.sessionId, cwd: event.cwd });
+    win?.webContents.send('session:event', event);
+  },
   log,
   blockedConnectors: (cwd) => unapprovedProjectServers(cwd, CONFIG_DIR, connectorApprovals()),
   extraServers: () => (store.get().browserTools === false ? {} : { browser: browser.server() }),
@@ -176,7 +181,10 @@ const manager = new SessionManager({
   voice: () => voicePrompt(store.get()),
 });
 const copilot = new CopilotSessionManager({
-  emit: (event) => win?.webContents.send('session:event', event),
+  emit: (event) => {
+    if (event.type === 'session') chatIndex.register({ providerId: 'copilot', accountId: copilot.accountId, sessionId: event.sessionId, cwd: event.cwd });
+    win?.webContents.send('session:event', event);
+  },
   log,
   dir: app.getPath('userData'),
 });

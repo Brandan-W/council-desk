@@ -33,6 +33,8 @@ COPILOT_BIN=/opt/homebrew/bin/copilot npm start
 
 Choose **Copilot** in the provider chip for a new session. Council Desk keeps a local Copilot session index under its application data directory and resumes turns with the CLI session id. Copilot sessions use the CLI's own authentication and workspace trust; Council Desk's Claude permission cards, rewind, MCP approval flow, and Claude-specific modes do not apply. The adapter intentionally does not pass broad allow-all flags, so tool permissions remain governed by the Copilot CLI configuration.
 
+Only Copilot chats launched by Council Desk appear in its Chats and Activity views. Council Desk does not import opaque history from the separate Copilot app because that app does not expose a supported history API here.
+
 ## Other ways of authenticating
 
 API keys are the supported setup. Council Desk leaves Claude Code's existing authentication and provider configuration (such as Amazon Bedrock or Google Vertex AI) unchanged, so billing depends on the configuration actually in use. The sidebar footer shows which one that is. Council Desk doesn't offer or manage Claude account sign-in.

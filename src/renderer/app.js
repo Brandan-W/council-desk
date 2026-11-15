@@ -62,6 +62,7 @@ const state = {
   account: null,
   providers: [],
   agentUsage: [],
+  sidebarView: 'chats',
   settings: null,
   sessions: [],
   convs: new Map(),
@@ -656,10 +657,39 @@ function sectionHeader({ label, count, open, toggle, icon, title, working, menu,
 
 function renderSidebar() {
   if (el.sessionList.querySelector('input.rename') || state.dragIds) return;
+  if (state.sidebarView === 'activity') return renderActivity();
   const items = [];
   const active = state.active;
   if (active && !active.sessionId && active.hasMessages) {
     items.push(sidebarItem({ title: active.title || 'New session', meta: base(active.cwd), active: true, busy: active.busy }));
+  }
+
+  function renderActivity() {
+    const groups = [
+      ['Working', state.sessions.filter((s) => sessionStatus(s) === 'busy'), 'busy'],
+      ['Waiting', state.sessions.filter((s) => sessionStatus(s) === 'waiting'), 'waiting'],
+      ['Completed / idle', state.sessions.filter((s) => !['busy', 'waiting'].includes(sessionStatus(s))), 'completed'],
+    ];
+    const items = [];
+    for (const [label, sessions, status] of groups) {
+      if (!sessions.length) continue;
+      items.push(h('div', { class: 'sidebar-group activity-heading' }, label, h('span', { class: 'section-count' }, String(sessions.length))));
+      for (const session of sessions.sort((a, b) => b.lastModified - a.lastModified)) {
+        const conv = convForSession(session.sessionId, session.providerId, session.accountId);
+        items.push(sidebarItem({
+          title: conv?.title || sessionTitle(session),
+          meta: [session.providerName || session.providerId, base(session.cwd) || 'No folder', STATUS_TEXT[status] || 'Idle'].filter(Boolean).join(' · '),
+          active: state.active?.sessionId === session.sessionId,
+          status: status === 'completed' ? null : status,
+          open: () => openSession(session),
+        }));
+      }
+    }
+    if (!items.length) items.push(h('div', { class: 'session-empty' }, 'No agent activity yet.'));
+    el.sessionList.replaceChildren(...items);
+    $('session-options').classList.remove('filtered');
+    $('select-sessions').classList.remove('on');
+    $('sidebar-view-label').textContent = 'Activity';
   }
 
   const pinned = new Set(state.settings.pinnedSessions || []);
@@ -2009,6 +2039,12 @@ $('select-sessions').addEventListener('click', () => {
   renderSidebar();
 });
 $('session-options').addEventListener('click', () => togglePopover('session-options', openSessionOptions));
+$('activity-view').addEventListener('click', () => {
+  state.sidebarView = state.sidebarView === 'activity' ? 'chats' : 'activity';
+  $('sidebar-view-label').textContent = state.sidebarView === 'activity' ? 'Activity' : 'Chats';
+  $('activity-view').classList.toggle('on', state.sidebarView === 'activity');
+  renderSidebar();
+});
 
 // Session search: titles filter as you type; a moment later, matches from inside
 // conversations are added with the matching line shown under the title.
