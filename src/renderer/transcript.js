@@ -5,8 +5,8 @@ import { groupSummary, h, ICONS, inputView, relPath, resultText, resultView, sum
 const HIDDEN_USER_TEXT = /^\s*<(command-|local-command|system-reminder|bash-|user-prompt-submit-hook)/;
 
 export class Conversation {
-  constructor({ key, sessionId = null, cwd = null, title = '', mode = 'default', model = '', api, onRespond }) {
-    Object.assign(this, { key, sessionId, cwd, title, mode, model, api, onRespond });
+  constructor({ key, sessionId = null, cwd = null, title = '', mode = 'default', model = '', providerId = 'claude', accountId = 'default', api, onRespond }) {
+    Object.assign(this, { key, sessionId, cwd, title, mode, model, providerId, accountId, api, onRespond });
     this.el = h('div', { class: 'transcript' });
     this.tools = new Map();
     this.cards = new Map();

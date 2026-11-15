@@ -23,6 +23,8 @@ import { createTrust } from './trust.js';
 import { createBoardWatch } from './board-watch.js';
 import { voicePrompt } from '../shared/voices.js';
 import { createWorkspace } from './workspace.js';
+import { createProviderRegistry } from './providers.js';
+import { CopilotSessionManager } from './copilot.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const store = createStore(app.getPath('userData'));
@@ -173,6 +175,12 @@ const manager = new SessionManager({
   autoAllow: BROWSER_READ_ONLY,
   voice: () => voicePrompt(store.get()),
 });
+const copilot = new CopilotSessionManager({
+  emit: (event) => win?.webContents.send('session:event', event),
+  log,
+  dir: app.getPath('userData'),
+});
+const providers = createProviderRegistry({ claude: manager, copilot });
 
 // Helper sessions (optional, off by default): when another agent on council-board asks this
 // app's agent for help (and Settings → Start helper sessions is on), Council Desk asks you
@@ -384,22 +392,24 @@ const handlers = {
   'term:open': (id, cwd, cols, rows) => terminals.open(id, cwd, cols, rows),
   'term:kill': (id) => terminals.kill(id),
 
-  'sessions:list': () => manager.list(),
+  'providers:list': () => providers.list(),
+  'sessions:list': async () => [...(await manager.list()), ...copilot.list()],
   'sessions:search': (query) => searchSessions(query),
-  'sessions:history': (sessionId, cwd) => manager.history(sessionId, cwd),
-  'sessions:rename': (sessionId, title, cwd) => manager.rename(sessionId, title, cwd),
-  'sessions:tag': (sessionId, tag, cwd) => manager.tag(sessionId, tag, cwd),
-  'sessions:remove': async (sessionId, cwd) => {
+  'sessions:history': (sessionId, cwd, providerId = 'claude') => providerId === 'copilot' ? copilot.history(sessionId, cwd) : manager.history(sessionId, cwd),
+  'sessions:rename': (sessionId, title, cwd, providerId = 'claude') => providerId === 'copilot' ? copilot.rename(sessionId, title) : manager.rename(sessionId, title, cwd),
+  'sessions:tag': (sessionId, tag, cwd, providerId = 'claude') => providerId === 'copilot' ? copilot.tag(sessionId, tag) : manager.tag(sessionId, tag, cwd),
+  'sessions:remove': async (sessionId, cwd, providerId = 'claude') => {
     const { response } = await dialog.showMessageBox(win, {
       type: 'warning',
       message: 'Delete this session?',
-      detail: 'Its conversation history is removed from this Mac. Files Claude changed are not affected.',
+      detail: 'Its conversation history is removed from this Mac. Files changed by the session are not affected.',
       buttons: ['Delete', 'Cancel'],
       defaultId: 1,
       cancelId: 1,
     });
     if (response !== 0) return false;
-    await manager.remove(sessionId, cwd);
+    if (providerId === 'copilot') await copilot.remove(sessionId);
+    else await manager.remove(sessionId, cwd);
     return true;
   },
 
@@ -422,13 +432,15 @@ const handlers = {
     });
     if (response !== 0) return null;
     const result = { removed: [], failed: [] };
-    for (const { sessionId, cwd } of items) {
-      if (manager.isActive(sessionId)) {
+    for (const { sessionId, cwd, providerId = 'claude' } of items) {
+      const active = providerId === 'copilot' ? copilot.isActive(sessionId) : manager.isActive(sessionId);
+      if (active) {
         result.failed.push({ sessionId, error: 'it started working again' });
         continue;
       }
       try {
-        await manager.remove(sessionId, cwd);
+        if (providerId === 'copilot') await copilot.remove(sessionId);
+        else await manager.remove(sessionId, cwd);
         result.removed.push(sessionId);
       } catch (error) {
         result.failed.push({ sessionId, error: error.message });
@@ -438,15 +450,16 @@ const handlers = {
   },
 
   // The window asks before the first message in a folder; this makes sure of it.
-  'chat:send': ({ text, attachments, ...args }) => {
+  'chat:send': ({ text, attachments, providerId = 'claude', ...args }) => {
     if (!trust.isTrusted(args.cwd)) throw untrusted(args.cwd);
+    if (providerId === 'copilot') return copilot.send({ ...args, text, model: args.model });
     return manager.send({ ...args, content: buildContent(text, attachments) });
   },
-  'chat:setEffort': (key, level) => manager.setEffort(key, level),
-  'chat:setFast': (key, on) => manager.setFast(key, on),
-  'chat:context': (key) => manager.context(key),
-  'chat:commands': (key) => manager.commands(key),
-  'chat:interrupt': (key) => manager.interrupt(key),
+  'chat:setEffort': (key, level, providerId = 'claude') => providerId === 'copilot' ? undefined : manager.setEffort(key, level),
+  'chat:setFast': (key, on, providerId = 'claude') => providerId === 'copilot' ? undefined : manager.setFast(key, on),
+  'chat:context': (key, providerId = 'claude') => providerId === 'copilot' ? null : manager.context(key),
+  'chat:commands': (key, providerId = 'claude') => providerId === 'copilot' ? [] : manager.commands(key),
+  'chat:interrupt': (key, providerId = 'claude') => providerId === 'copilot' ? copilot.interrupt(key) : manager.interrupt(key),
   'browser:attach': (id) => browser.attach(id),
   'schedules:list': () => schedules.list(),
   'schedules:save': (task) => schedules.save(task),
@@ -456,9 +469,9 @@ const handlers = {
   'schedules:stop': (id) => schedules.stop(id),
   'chat:rewindPreview': (args) => manager.rewindPreview(args),
   'chat:rewind': (args) => manager.rewind(args),
-  'chat:setMode': (key, mode) => manager.setMode(key, mode),
-  'chat:setModel': (key, model) => manager.setModel(key, model),
-  'chat:models': () => manager.models(),
+  'chat:setMode': (key, mode, providerId = 'claude') => providerId === 'copilot' ? undefined : manager.setMode(key, mode),
+  'chat:setModel': (key, model, providerId = 'claude') => providerId === 'copilot' ? undefined : manager.setModel(key, model),
+  'chat:models': (providerId = 'claude') => providerId === 'copilot' ? [] : manager.models(),
 
   'app:engineVersion': () => engine.current(),
   'app:checkEngine': () => engine.check(),
@@ -476,8 +489,8 @@ const handlers = {
     if (store.get().theme === id) applyThemeIcons(id);
     return true;
   },
-  'chat:respond': (key, id, decision) => manager.respond(key, id, decision),
-  'chat:close': (key) => manager.close(key),
+  'chat:respond': (key, id, decision, providerId = 'claude') => providerId === 'copilot' ? undefined : manager.respond(key, id, decision),
+  'chat:close': (key, providerId = 'claude') => providerId === 'copilot' ? copilot.close(key) : manager.close(key),
 };
 
 // Only the app's own page may use these, not anything embedded in it.
@@ -690,4 +703,5 @@ app.on('before-quit', () => {
   schedules.stopAll();
   boardWatch.stop();
   manager.closeAll();
+  copilot.closeAll();
 });

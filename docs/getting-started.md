@@ -17,6 +17,22 @@ The Browser pane holds back the values of password, card and one-time-code field
 
 Never commit your key or paste it into a chat.
 
+## Local Copilot sessions
+
+Council Desk can launch the installed GitHub Copilot CLI in prompt mode. Install and authenticate the CLI using GitHub's current Copilot CLI instructions, then verify it from a terminal:
+
+```bash
+copilot --help
+```
+
+Start Council Desk from the same environment so it can find the executable. The default macOS Homebrew path is `/opt/homebrew/bin/copilot`; override it with `COPILOT_BIN` when needed:
+
+```bash
+COPILOT_BIN=/opt/homebrew/bin/copilot npm start
+```
+
+Choose **Copilot** in the provider chip for a new session. Council Desk keeps a local Copilot session index under its application data directory and resumes turns with the CLI session id. Copilot sessions use the CLI's own authentication and workspace trust; Council Desk's Claude permission cards, rewind, MCP approval flow, and Claude-specific modes do not apply. The adapter intentionally does not pass broad allow-all flags, so tool permissions remain governed by the Copilot CLI configuration.
+
 ## Other ways of authenticating
 
 API keys are the supported setup. Council Desk leaves Claude Code's existing authentication and provider configuration (such as Amazon Bedrock or Google Vertex AI) unchanged, so billing depends on the configuration actually in use. The sidebar footer shows which one that is. Council Desk doesn't offer or manage Claude account sign-in.

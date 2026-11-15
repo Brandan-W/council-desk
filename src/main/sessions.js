@@ -11,6 +11,7 @@ import {
   renameSession,
   tagSession,
 } from '@anthropic-ai/claude-agent-sdk';
+import { withProvider } from '../shared/providers.js';
 
 // Async iterable the SDK reads user messages from, so one Claude process serves
 // the whole conversation (needed for interrupt, mode changes and permission prompts).
@@ -187,10 +188,12 @@ export class SessionManager {
   // never need a permission prompt; persistSessions: false keeps conversations off disk.
   // voice(): text added to each new session's instructions ('' for none).
   // env(): the environment for each Claude Code process (default: this process's).
-  constructor({ emit, log, blockedConnectors, extraServers, autoAllow, voice, env, persistSessions = true }) {
+  constructor({ emit, log, blockedConnectors, extraServers, autoAllow, voice, env, persistSessions = true, accountId = 'default' }) {
     this.emit = emit;
     this.env = env;
     this.persistSessions = persistSessions;
+    this.providerId = 'claude';
+    this.accountId = accountId;
     this.log = log;
     this.blockedConnectors = blockedConnectors;
     this.extraServers = extraServers;
@@ -201,7 +204,7 @@ export class SessionManager {
   }
 
   list() {
-    return listSessions({ limit: 300 });
+    return Promise.resolve(listSessions({ limit: 300 })).then((sessions) => sessions.map((session) => withProvider(session, this)));
   }
 
   history(sessionId, cwd) {

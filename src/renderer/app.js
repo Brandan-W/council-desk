@@ -31,6 +31,7 @@ import {
   sortSessions,
 } from '../shared/session-list.js';
 import { ensureTrusted } from './trust-dialog.js';
+import { sessionKey } from '../shared/providers.js';
 
 const api = window.api;
 const $ = (id) => document.getElementById(id);
@@ -45,6 +46,7 @@ const el = {
   input: $('input'),
   folderChip: $('folder-chip'),
   mode: $('mode-select'),
+  provider: $('provider-select'),
   model: $('model-select'),
   effort: $('effort-select'),
   fast: $('fast-toggle'),
@@ -58,6 +60,7 @@ const el = {
 const state = {
   info: null,
   account: null,
+  providers: [],
   settings: null,
   sessions: [],
   convs: new Map(),
@@ -502,10 +505,15 @@ async function refreshSessions() {
 
 const PIN_ICON = '<svg class="pin" viewBox="0 0 20 20"><path d="M12.5 3.5l4 4-3 1.5-2.5 2.5.5 3.5-1.5 1.5-3-3-3.5 3.5M7 10l3 3" /></svg>';
 
-const convForSession = (sessionId) => [...state.convs.values()].find((c) => c.sessionId === sessionId);
+const convForSession = (sessionId, providerId = 'claude', accountId = 'default') =>
+  [...state.convs.values()].find((c) => c.sessionId === sessionId && c.providerId === providerId && c.accountId === accountId);
 
 function sessionTitle(s) {
   return (s.customTitle || s.summary || s.firstPrompt || 'Untitled').replace(/\s+/g, ' ').trim();
+}
+
+function providerLabel(s) {
+  return s.providerName && s.providerId !== 'claude' ? s.providerName : '';
 }
 
 // Sessions that helped another agent: ones Council Desk started for a help request (tagged
@@ -534,7 +542,7 @@ function saveSettings(patch) {
 // What a session needs from you right now. Waiting on an answer comes first, so a session
 // paused on a question never just looks busy.
 function sessionStatus(s) {
-  const conv = convForSession(s.sessionId);
+  const conv = convForSession(s.sessionId, s.providerId, s.accountId);
   if (conv?.cards.size) return 'waiting';
   if (conv?.busy) return 'busy';
   if ((state.settings.unreadSessions || []).includes(s.sessionId)) return 'unread';
@@ -628,7 +636,7 @@ function renderSidebar() {
 
   const itemFor = (s, { inProject = false, needs = false } = {}) => {
     order.push(s.sessionId);
-    const conv = convForSession(s.sessionId);
+    const conv = convForSession(s.sessionId, s.providerId, s.accountId);
     const isPinned = pinned.has(s.sessionId);
     const isArchived = archived.has(s.sessionId);
     const status = sessionStatus(s);
@@ -637,7 +645,7 @@ function renderSidebar() {
     const lead = needs ? [status === 'waiting' ? 'Waiting for your answer' : 'Finished', projectFor(s.cwd).name] : [isArchived && query ? 'Archived' : '', where];
     return sidebarItem({
       title: conv?.title || sessionTitle(s),
-      meta: [...lead, timeAgo(s.lastModified)].filter(Boolean).join(' · '),
+      meta: [providerLabel(s), ...lead, timeAgo(s.lastModified)].filter(Boolean).join(' · '),
       snippet: query && state.searchHits.get(s.sessionId),
       active: active?.sessionId === s.sessionId,
       status,
@@ -672,7 +680,7 @@ function renderSidebar() {
     if (groups.length < 2 && !always) return plain();
     return groups.flatMap((group) => [h('div', { class: 'date-heading' }, group.label), ...group.sessions.map((s) => itemFor(s, { inProject }))]);
   };
-  const anyWorking = (sessions) => sessions.some((s) => convForSession(s.sessionId)?.busy);
+  const anyWorking = (sessions) => sessions.some((s) => convForSession(s.sessionId, s.providerId, s.accountId)?.busy);
 
   if (state.undo) {
     items.push(
@@ -933,7 +941,7 @@ async function deleteSessions(ids) {
     return;
   }
   const result = await api.sessions.removeMany(
-    deletable.map((s) => ({ sessionId: s.sessionId, cwd: s.cwd, title: sessionTitle(s) })),
+    deletable.map((s) => ({ sessionId: s.sessionId, cwd: s.cwd, title: sessionTitle(s), providerId: s.providerId || 'claude' })),
     chosen.length - deletable.length,
   );
   if (!result) return;
@@ -1108,8 +1116,8 @@ function startRename(item, s) {
     input.replaceWith(titleEl);
     try {
       if (save && title && title !== titleEl.textContent) {
-        await api.sessions.rename(s.sessionId, title, s.cwd);
-        const conv = convForSession(s.sessionId);
+        await api.sessions.rename(s.sessionId, title, s.cwd, s.providerId || 'claude');
+        const conv = convForSession(s.sessionId, s.providerId, s.accountId);
         if (conv) conv.title = title;
         if (conv && state.active === conv) el.title.textContent = title;
       }
@@ -1127,7 +1135,7 @@ function startRename(item, s) {
 }
 
 async function removeSession(s) {
-  if (!(await api.sessions.remove(s.sessionId, s.cwd))) return;
+  if (!(await api.sessions.remove(s.sessionId, s.cwd, s.providerId || 'claude'))) return;
   forgetSessions([s.sessionId]);
   refreshSessions();
 }
@@ -1202,15 +1210,22 @@ function createConversation(fields) {
 }
 
 async function openSession(s) {
-  let conv = convForSession(s.sessionId);
+  let conv = convForSession(s.sessionId, s.providerId, s.accountId);
   if (!conv) {
-    conv = createConversation({ key: s.sessionId, sessionId: s.sessionId, cwd: s.cwd, title: sessionTitle(s) });
+    conv = createConversation({
+      key: sessionKey(s),
+      sessionId: s.sessionId,
+      providerId: s.providerId || 'claude',
+      accountId: s.accountId || 'default',
+      cwd: s.cwd,
+      title: sessionTitle(s),
+    });
     // While the history loads, the session shows "Loading…" and can't be sent to, so a new
     // message can't land before the old ones.
     conv.loading = true;
     show(conv);
     try {
-      conv.loadHistory(await api.sessions.history(s.sessionId, s.cwd));
+      conv.loadHistory(await api.sessions.history(s.sessionId, s.cwd, s.providerId || 'claude'));
     } catch (error) {
       conv.addNote(`Could not load this session: ${error.message}`, 'error');
     }
@@ -1231,6 +1246,7 @@ function newSession(cwd) {
   }
   const conv = createConversation({
     key: `new-${crypto.randomUUID()}`,
+    providerId: el.provider?.value || 'claude',
     cwd: cwd || state.settings.recentFolders?.[0] || null,
   });
   show(conv);
@@ -1268,6 +1284,12 @@ function show(conv) {
   el.folderChip.replaceChildren(svg(ICONS.folder), conv.cwd ? base(conv.cwd) : 'Choose folder');
   el.folderChip.disabled = conv.hasMessages;
   el.folderChip.title = conv.hasMessages ? tilde(conv.cwd) : 'Choose the project folder';
+  setSelect(el.provider, conv.providerId || 'claude');
+  el.provider.disabled = conv.hasMessages;
+  const copilot = conv.providerId === 'copilot';
+  el.mode.disabled = copilot;
+  el.effort.disabled = copilot;
+  el.fast.disabled = copilot;
   setSelect(el.mode, conv.mode);
   setSelect(el.model, conv.model);
   setSelect(el.effort, conv.effort);
@@ -1477,6 +1499,7 @@ async function startTurn(conv, text, files = [], uuid = crypto.randomUUID()) {
       key: conv.key,
       cwd: conv.cwd,
       resume: conv.sessionId || undefined,
+      providerId: conv.providerId || 'claude',
       mode: conv.mode,
       model: conv.model,
       effort: conv.effort,
@@ -1487,7 +1510,7 @@ async function startTurn(conv, text, files = [], uuid = crypto.randomUUID()) {
     });
   } catch (error) {
     conv.setBusy(false);
-    conv.addNote(`Could not start Claude: ${error.message}`, 'error');
+    conv.addNote(`Could not start ${conv.providerId === 'copilot' ? 'Copilot' : 'Claude'}: ${error.message}`, 'error');
     if (state.active === conv) updateSendButton();
     split.update();
   }
@@ -1663,9 +1686,9 @@ document.addEventListener('keydown', (e) => {
   // belongs to that box.
   const elsewhere = e.target !== el.input && e.target.closest?.('input, textarea, select, [contenteditable]');
   if (e.defaultPrevented || elsewhere) return;
-  if (state.active?.busy && !menuEl) api.chat.interrupt(state.active.key);
+  if (state.active?.busy && !menuEl) api.chat.interrupt(state.active.key, state.active.providerId || 'claude');
 });
-el.send.addEventListener('click', () => (state.active?.busy ? api.chat.interrupt(state.active.key) : send()));
+el.send.addEventListener('click', () => (state.active?.busy ? api.chat.interrupt(state.active.key, state.active.providerId || 'claude') : send()));
 $('attach').addEventListener('click', () => attachments.pick());
 el.folderChip.addEventListener('click', pickFolder);
 el.folder.addEventListener('click', () => state.active?.cwd && api.app.reveal(state.active.cwd));
@@ -1709,8 +1732,8 @@ async function labelHelper(conv) {
   if (!conv.needsLabel || !conv.sessionId || conv.labeling) return;
   conv.labeling = true;
   try {
-    await api.sessions.rename(conv.sessionId, conv.title, conv.cwd);
-    await api.sessions.tag(conv.sessionId, 'helper', conv.cwd);
+    await api.sessions.rename(conv.sessionId, conv.title, conv.cwd, conv.providerId || 'claude');
+    await api.sessions.tag(conv.sessionId, 'helper', conv.cwd, conv.providerId || 'claude');
     conv.needsLabel = false;
     scheduleRefreshSessions(300);
   } catch {
@@ -1762,7 +1785,7 @@ const split = createSplitView({
   container: $('split-panel'),
   tilde,
   onShow: () => (viewer.close(), changes.close(), browserPanel.close()),
-  onStop: (conv) => api.chat.interrupt(conv.key),
+  onStop: (conv) => api.chat.interrupt(conv.key, conv.providerId || 'claude'),
   onSend: async (conv, text) => {
     if (!(await ensureTrusted(api, conv.cwd))) return;
     const uuid = crypto.randomUUID();
@@ -1774,11 +1797,18 @@ const split = createSplitView({
 
 async function openInSplit(s) {
   if (state.active?.sessionId === s.sessionId) return;
-  let conv = convForSession(s.sessionId);
+  let conv = convForSession(s.sessionId, s.providerId, s.accountId);
   if (!conv) {
-    conv = createConversation({ key: s.sessionId, sessionId: s.sessionId, cwd: s.cwd, title: sessionTitle(s) });
+    conv = createConversation({
+      key: sessionKey(s),
+      sessionId: s.sessionId,
+      providerId: s.providerId || 'claude',
+      accountId: s.accountId || 'default',
+      cwd: s.cwd,
+      title: sessionTitle(s),
+    });
     try {
-      conv.loadHistory(await api.sessions.history(s.sessionId, s.cwd));
+      conv.loadHistory(await api.sessions.history(s.sessionId, s.cwd, s.providerId || 'claude'));
     } catch (error) {
       conv.addNote(`Could not load this session: ${error.message}`, 'error');
     }
@@ -1866,7 +1896,7 @@ el.mode.addEventListener('change', () => {
   rememberForFolder(conv, { mode: conv.mode });
   // If the session can't switch (Auto mode isn't available on every account), say so and
   // put the chip back, rather than show a mode the session isn't in.
-  api.chat.setMode(conv.key, conv.mode).catch((error) => {
+  api.chat.setMode(conv.key, conv.mode, conv.providerId || 'claude').catch((error) => {
     conv.mode = previous;
     rememberForFolder(conv, { mode: previous });
     if (state.active === conv) setSelect(el.mode, previous);
@@ -1877,20 +1907,35 @@ el.model.addEventListener('change', () => {
   const conv = state.active;
   conv.model = el.model.value;
   rememberForFolder(conv, { model: conv.model });
-  api.chat.setModel(conv.key, conv.model);
+  api.chat.setModel(conv.key, conv.model, conv.providerId || 'claude');
 });
 el.effort.addEventListener('change', () => {
   const conv = state.active;
   conv.effort = el.effort.value;
   setSelect(el.effort, conv.effort);
   rememberForFolder(conv, { effort: conv.effort });
-  api.chat.setEffort(conv.key, conv.effort);
+  api.chat.setEffort(conv.key, conv.effort, conv.providerId || 'claude');
 });
 el.fast.addEventListener('click', () => {
   const conv = state.active;
   conv.fast = !conv.fast;
   api.settings.set({ fast: conv.fast });
-  api.chat.setFast(conv.key, conv.fast);
+  api.chat.setFast(conv.key, conv.fast, conv.providerId || 'claude');
+});
+
+el.provider.addEventListener('change', () => {
+  const conv = state.active;
+  if (!conv || conv.hasMessages) return;
+  conv.providerId = el.provider.value;
+  if (conv.providerId === 'copilot') {
+    el.mode.disabled = true;
+    el.effort.disabled = true;
+    el.fast.disabled = true;
+  } else {
+    el.mode.disabled = false;
+    el.effort.disabled = false;
+    el.fast.disabled = false;
+  }
   renderFast();
 });
 
@@ -1946,6 +1991,7 @@ $('show-sidebar').addEventListener('click', toggleSidebar);
 async function init() {
   state.info = await api.app.info();
   state.settings = await api.settings.get();
+  state.providers = await api.providers.list().catch(() => []);
   installAllThemes();
   applyTheme(state.settings.theme);
   document.body.classList.toggle('sidebar-hidden', Boolean(state.settings.sidebarHidden));

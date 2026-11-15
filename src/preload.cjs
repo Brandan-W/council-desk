@@ -23,6 +23,9 @@ contextBridge.exposeInMainWorld('api', {
     saveKey: invoke('account:saveKey'),
     clearKey: invoke('account:clearKey'),
   },
+  providers: {
+    list: invoke('providers:list'),
+  },
   settings: {
     get: invoke('settings:get'),
     set: invoke('settings:set'),
